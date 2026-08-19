@@ -17,7 +17,7 @@ export class Container {
     this.values.set(token, value);
   }
 
-  get(token: Token, path: string[] = []): unknown {
+  get(token: Token, path: Ctor[] = []): unknown {
     if (this.values.has(token)) return this.values.get(token);
     if (typeof token === "function") return this.resolve(token as Ctor, path);
     throw new Error(
@@ -25,7 +25,9 @@ export class Container {
     );
   }
 
-  resolve<T>(target: Ctor<T>, path: string[] = []): T {
+  resolve<T>(target: Ctor<T>, path: Ctor[] = []): T {
+    if (this.values.has(target)) return this.values.get(target) as T;
+
     const injectable = Reflect.getOwnMetadata(INJECTABLE, target);
     if (!injectable) {
       throw new Error(`${target.name} не позначений @Injectable()`);
@@ -36,16 +38,15 @@ export class Container {
       return this.singletons.get(target) as T;
     }
 
-    if (path.includes(target.name)) {
+    if (path.includes(target)) {
       throw new Error(
-        `цикл залежностей: ${[...path, target.name].join(" -> ")}`,
+        `цикл залежностей: ${[...path, target].map((ctor) => ctor.name).join(" -> ")}`,
       );
     }
 
-    const deps = (Reflect.getOwnMetadata("design:paramtypes", target) ??
+    const deps = (Reflect.getMetadata("design:paramtypes", target) ??
       []) as Token[];
-    const injectedTokens =
-      Reflect.getOwnMetadata(INJECTED_TOKENS, target) ?? [];
+    const injectedTokens = Reflect.getMetadata(INJECTED_TOKENS, target) ?? [];
 
     const args = deps.map((type, index) => {
       const injected = injectedTokens[index];
@@ -55,7 +56,7 @@ export class Container {
           `параметр #${index} класу ${target.name} має тип ${typeName} — потрібен @Inject(token)`,
         );
       }
-      return this.get(injected ?? type, [...path, target.name]);
+      return this.get(injected ?? type, [...path, target]);
     });
 
     const instance = new target(...args);
