@@ -1,0 +1,24 @@
+{
+  "name": "mini-nest",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "ts-node src/main.ts",
+    "build": "tsc",
+    "start:prod": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.16.0",
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3",
+    "unplugin-swc": "^1.5.11",
+    "vitest": "^4.1.10"
+  }
+}
