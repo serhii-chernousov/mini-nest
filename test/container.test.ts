@@ -174,4 +174,111 @@ describe("Container", () => {
       /Child не позначений @Injectable\(\)/,
     );
   });
+
+  it("декорований нащадок без власного ctor інжектить залежності батька", () => {
+    @Injectable()
+    class Dep {
+      readonly id = "dep";
+    }
+
+    @Injectable()
+    class Base {
+      constructor(public dep: Dep) {}
+    }
+
+    @Injectable()
+    class Child extends Base {}
+
+    const child = new Container().resolve(Child);
+
+    expect(child).toBeInstanceOf(Child);
+    expect(child.dep).toBeInstanceOf(Dep);
+  });
+
+  it("декорований нащадок бере @Inject з конструктора батька", () => {
+    const TOKEN = Symbol("x");
+
+    @Injectable()
+    class WithInject {
+      constructor(@Inject(TOKEN) public x: string) {}
+    }
+
+    @Injectable()
+    class ChildInject extends WithInject {}
+
+    const container = new Container();
+    container.bind(TOKEN, "hello");
+    const child = container.resolve(ChildInject);
+
+    expect(child.x).toBe("hello");
+  });
+
+  it("два різні класи з однаковим імʼям у ланцюгу — не цикл", () => {
+    function makeHolder() {
+      @Injectable()
+      class Config {
+        constructor(public next: unknown) {}
+      }
+      return Config;
+    }
+
+    function makeLeaf() {
+      @Injectable()
+      class Config {}
+      return Config;
+    }
+
+    const ConfigA = makeHolder();
+    const ConfigB = makeLeaf();
+
+    @Injectable({ scope: "transient" })
+    class Service {
+      constructor(public cfg: InstanceType<typeof ConfigB>) {}
+    }
+
+    Reflect.defineMetadata("design:paramtypes", [Service], ConfigA);
+    Reflect.defineMetadata("design:paramtypes", [ConfigB], Service);
+
+    const result = new Container().resolve(ConfigA);
+
+    expect(ConfigA).not.toBe(ConfigB);
+    expect(result.next).toBeInstanceOf(Service);
+    expect((result.next as InstanceType<typeof Service>).cfg).toBeInstanceOf(
+      ConfigB,
+    );
+  });
+
+  it("справжній цикл двох класів з однаковим імʼям ловиться", () => {
+    function makeNode() {
+      @Injectable({ scope: "transient" })
+      class Node {
+        constructor(public next: unknown) {}
+      }
+      return Node;
+    }
+
+    const Left = makeNode();
+    const Right = makeNode();
+
+    Reflect.defineMetadata("design:paramtypes", [Right], Left);
+    Reflect.defineMetadata("design:paramtypes", [Left], Right);
+
+    expect(() => new Container().resolve(Left)).toThrow(
+      /цикл залежностей: Node -> Node -> Node/,
+    );
+  });
+
+  it("bind() перекриває і get(), і resolve()", () => {
+    @Injectable()
+    class Repo {
+      readonly kind = "real";
+    }
+
+    const mock = { kind: "mock" };
+    const container = new Container();
+    container.bind(Repo, mock);
+
+    expect(container.get(Repo)).toBe(mock);
+    expect(container.resolve(Repo)).toBe(mock);
+  });
 });
