@@ -3,30 +3,30 @@ import { Injectable } from "./decorators/injectable";
 import { CONTROLLER, CONTROLLERS, ROUTES } from "./tokens";
 import { Ctor } from "./types";
 
+type Segment =
+  | { kind: "static"; value: string }
+  | { kind: "param"; name: string };
+
 interface CompiledRoute {
   httpMethod: "GET" | "POST";
-  regex: RegExp;
-  paramNames: string[];
+  segments: Segment[];
+  specificity: string;
   controller: Ctor;
   handlerName: string;
 }
 
-function joinPath(prefix: string, path: string) {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const normalizedPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
-  if (normalizedPath === "/") return normalizedPrefix;
-  if (normalizedPrefix === "/") return normalizedPath;
-  return `${normalizedPrefix}${normalizedPath}`;
+const splitPath = (path: string) => path.split("/").filter(Boolean);
+
+function compileSegments(prefix: string, path: string): Segment[] {
+  return [...splitPath(prefix), ...splitPath(path)].map((segment) =>
+    segment.startsWith(":")
+      ? { kind: "param", name: segment.slice(1) }
+      : { kind: "static", value: segment },
+  );
 }
 
-function compilePath(path: string) {
-  const paramNames: string[] = [];
-  const pattern = path.replace(/:([^/]+)/g, (_, name) => {
-    paramNames.push(name);
-    return "([^/]+)";
-  });
-  return { regex: new RegExp(`^${pattern}$`), paramNames };
-}
+const byStaticFirst = (a: CompiledRoute, b: CompiledRoute) =>
+  a.specificity < b.specificity ? -1 : a.specificity > b.specificity ? 1 : 0;
 
 @Injectable()
 export class Router {
@@ -36,18 +36,23 @@ export class Router {
     for (const controller of this.controllers) {
       this.registerRoutes(controller);
     }
+    this.routes.sort(byStaticFirst);
   }
 
   private registerRoutes(controller: Ctor) {
     const prefix = Reflect.getMetadata(CONTROLLER, controller);
-    const routes = Reflect.getOwnMetadata(ROUTES, controller.prototype);
+    if (prefix === undefined) {
+      throw new Error(`${controller.name} не позначений @Controller()`);
+    }
+    const routes = Reflect.getOwnMetadata(ROUTES, controller.prototype) ?? [];
     for (const route of routes) {
-      const path = joinPath(prefix, route.path);
-      const { regex, paramNames } = compilePath(path);
+      const segments = compileSegments(prefix, route.path);
       this.routes.push({
         httpMethod: route.httpMethod,
-        regex,
-        paramNames,
+        segments,
+        specificity: segments
+          .map((s) => (s.kind === "static" ? "0" : "1"))
+          .join(""),
         controller,
         handlerName: route.handlerName,
       });
@@ -55,18 +60,31 @@ export class Router {
   }
 
   match(method: "GET" | "POST", url: string) {
-    const pathname = new URL(url, process.env.URL_BASE ?? `http://localhost`)
-      .pathname;
+    const pathname = new URL(
+      url.replace(/^\/{2,}/, "/"),
+      process.env.URL_BASE ?? `http://localhost`,
+    ).pathname;
+    const parts = splitPath(pathname);
 
     for (const route of this.routes) {
       if (route.httpMethod !== method) continue;
-      const match = pathname.match(route.regex);
-      if (!match) continue;
+      if (route.segments.length !== parts.length) continue;
 
       const params: Record<string, string> = {};
-      for (let i = 0; i < route.paramNames.length; i++) {
-        params[route.paramNames[i]] = match[i + 1];
+      let matched = true;
+      for (let i = 0; i < route.segments.length; i++) {
+        const segment = route.segments[i];
+        if (segment.kind === "static") {
+          if (segment.value !== parts[i]) {
+            matched = false;
+            break;
+          }
+        } else {
+          params[segment.name] = parts[i];
+        }
       }
+      if (!matched) continue;
+
       return {
         controller: route.controller,
         handlerName: route.handlerName,
