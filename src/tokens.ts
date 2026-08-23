@@ -1,3 +1,9 @@
 export const INJECTABLE = Symbol("injectable");
 export const INJECTED_TOKENS = Symbol("injectedTokens");
 export const LOGGER_CONFIG = Symbol("loggerConfig");
+export const CONTROLLER = Symbol("controller");
+export const ROUTES = Symbol("routes");
+export const GET = Symbol("get");
+export const POST = Symbol("post");
+export const PARAMS = Symbol("params");
+export const CONTROLLERS = Symbol("controllers");
