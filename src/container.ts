@@ -1,3 +1,4 @@
+import { Injectable } from "./decorators/injectable";
 import { INJECTABLE, INJECTED_TOKENS } from "./tokens";
 import { Ctor, Token } from "./types";
 
