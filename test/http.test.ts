@@ -154,3 +154,62 @@ describe("параметр-декоратори", () => {
     });
   });
 });
+
+describe("HTTP: ліміт тіла", () => {
+  let server: http.Server;
+  let base: string;
+
+  beforeAll(async () => {
+    const { dispatcher } = createApp();
+    server = createHttpServer(dispatcher, { bodyLimit: 64 });
+    base = await listen(server);
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  const big = JSON.stringify({ email: "ann@test.com", name: "A".repeat(200) });
+  const headers = { "Content-Type": "application/json" };
+
+  it("тіло понад ліміт (Content-Length) → 413 і Connection: close", async () => {
+    const res = await fetch(`${base}/users`, { method: "POST", headers, body: big });
+    const text = await res.text();
+    expect(res.status).toBe(413);
+    expect(res.headers.get("connection")).toBe("close");
+    const errors = JSON.parse(text) as { field: string; constraints: string[] }[];
+    expect(errors[0].field).toBe("body");
+    expect(text).toMatch(/Payload Too Large/);
+  });
+
+  it("тіло понад ліміт без Content-Length (chunked) → 413", async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(big));
+        controller.close();
+      },
+    });
+    const res = await fetch(`${base}/users`, {
+      method: "POST",
+      headers,
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    expect(res.status).toBe(413);
+    expect(res.headers.get("connection")).toBe("close");
+  });
+
+  it("після 413 сервер далі обслуговує запити", async () => {
+    const res = await fetch(`${base}/users/1`);
+    expect(res.status).toBe(200);
+  });
+
+  it("тіло в межах ліміту проходить як раніше → 201", async () => {
+    const small = JSON.stringify({ email: "a@b.co", name: "A" });
+    expect(small.length).toBeLessThanOrEqual(64);
+    const res = await fetch(`${base}/users`, { method: "POST", headers, body: small });
+    expect(res.status).toBe(201);
+  });
+});
