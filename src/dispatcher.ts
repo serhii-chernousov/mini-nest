@@ -1,9 +1,19 @@
 import { Container } from "./container";
+import { Inject } from "./decorators/inject";
 import { Injectable } from "./decorators/injectable";
-import { BadRequestError } from "./pipes/validation.pipe";
+import { ExceptionFilter } from "./filters/exception.filter";
 import { Router } from "./router";
-import { PARAMS } from "./tokens";
-import { Ctor, PipeCtor } from "./types";
+import { GUARDS, INTERCEPTORS, MIDDLEWARES, PARAMS } from "./tokens";
+import {
+  Ctor,
+  ForbiddenError,
+  GuardCtor,
+  InterceptorCtor,
+  MiddlewareCtor,
+  NotFoundError,
+  PipeCtor,
+  RequestContext,
+} from "./types";
 
 const URL_BASE = process.env.URL_BASE ?? `http://localhost`;
 
@@ -12,7 +22,17 @@ export class Dispatcher {
   constructor(
     private router: Router,
     private container: Container,
+    private exceptionFilter: ExceptionFilter,
+    @Inject(MIDDLEWARES) private middlewares: MiddlewareCtor[],
+    @Inject(INTERCEPTORS) private interceptors: InterceptorCtor[],
   ) {}
+
+  collectGuards(controller: Ctor, handlerName: string): GuardCtor[] {
+    const classGuards = Reflect.getOwnMetadata(GUARDS, controller) ?? [];
+    const methodGuards =
+      Reflect.getOwnMetadata(GUARDS, controller.prototype, handlerName) ?? [];
+    return [...classGuards, ...methodGuards];
+  }
 
   getArgs(
     controller: Ctor,
@@ -55,45 +75,57 @@ export class Dispatcher {
       return value;
     });
   }
-  async handle(method: "GET" | "POST", url: string, body?: unknown) {
-    const match = this.router.match(method, url);
-    if (!match)
-      return {
-        status: 404,
-        type: "text/plain; charset=utf-8",
-        body: "Not Found",
+  async handle(ctx: RequestContext) {
+    try {
+      for (const Middleware of this.middlewares) {
+        const middleware = this.container.resolve(Middleware);
+        await middleware.use(ctx);
+      }
+      const match = this.router.match(ctx.method as "GET" | "POST", ctx.url);
+      if (!match) {
+        throw new NotFoundError(`Cannot ${ctx.method} ${ctx.url}`);
+      }
+
+      const { controller, handlerName, params } = match;
+
+      const context = { ...ctx, params };
+
+      const guards = this.collectGuards(controller, handlerName);
+      for (const Guard of guards) {
+        const guard = this.container.resolve(Guard);
+        const canActivate = await guard.canActivate(context);
+        if (!canActivate) throw new ForbiddenError();
+      }
+
+      const invoke = async () => {
+        const instance = this.container.resolve(controller);
+
+        const args = await Promise.all(
+          this.getArgs(
+            controller,
+            handlerName,
+            context.params,
+            context.url,
+            context.body,
+          ),
+        );
+        return (instance as any)[handlerName](...args);
       };
 
-    const { controller, handlerName, params } = match;
-    const invoke = async () => {
-      const instance = this.container.resolve(controller);
-
-      const args = await Promise.all(
-        this.getArgs(controller, handlerName, params, url, body),
+      const run = this.interceptors.reduceRight(
+        (next, Interceptor) => () =>
+          this.container.resolve(Interceptor).intercept(context, next),
+        invoke,
       );
-      return (instance as any)[handlerName](...args);
-    };
 
-    try {
-      const result = await invoke();
+      const result = await run();
       return {
-        status: method === "POST" ? 201 : 200,
+        status: context.method === "POST" ? 201 : 200,
         type: "application/json; charset=utf-8",
         body: JSON.stringify(result ?? {}),
       };
     } catch (error) {
-      if (error instanceof BadRequestError) {
-        return {
-          status: 400,
-          type: "application/json; charset=utf-8",
-          body: JSON.stringify(error.errors),
-        };
-      }
-      return {
-        status: 500,
-        type: "text/plain; charset=utf-8",
-        body: "Internal Server Error",
-      };
+      return this.exceptionFilter.catch(error);
     }
   }
 }

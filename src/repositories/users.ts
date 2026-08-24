@@ -1,5 +1,7 @@
-import { Injectable } from "../../decorators/injectable";
-import { CreateUserDto } from "../../dto/create-user.dto";
+import { Injectable } from "../decorators/injectable";
+import { CreateUserDto } from "../dto/create-user.dto";
+import { NotFoundError } from "../types";
+import { getRequestId } from "../context/request-context";
 
 @Injectable()
 export class UsersRepository {
@@ -16,6 +18,10 @@ export class UsersRepository {
   }
 
   userById(id: number) {
+    if (id < 1) {
+      throw new NotFoundError(`User ${id} not found`);
+    }
+    console.log(`requestId=${getRequestId()}`);
     return { id, email: "test@test.com", name: "Test" };
   }
 }

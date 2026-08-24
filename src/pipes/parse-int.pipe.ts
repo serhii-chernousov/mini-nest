@@ -1,6 +1,5 @@
 import { Injectable } from "../decorators/injectable";
-import { ArgumentMetadata } from "../types";
-import { BadRequestError } from "./validation.pipe";
+import { ArgumentMetadata, BadRequestError } from "../types";
 
 @Injectable()
 export class ParseIntPipe {

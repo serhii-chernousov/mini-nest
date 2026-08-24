@@ -7,3 +7,6 @@ export const GET = Symbol("get");
 export const POST = Symbol("post");
 export const PARAMS = Symbol("params");
 export const CONTROLLERS = Symbol("controllers");
+export const MIDDLEWARES = Symbol("middlewares");
+export const INTERCEPTORS = Symbol("interceptors");
+export const GUARDS = Symbol("guards");
