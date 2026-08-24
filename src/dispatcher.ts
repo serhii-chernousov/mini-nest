@@ -1,4 +1,3 @@
-import { compose, Step } from "./compose";
 import { Container } from "./container";
 import { Injectable } from "./decorators/injectable";
 import { BadRequestError } from "./pipes/validation.pipe";
@@ -8,29 +7,12 @@ import { Ctor, PipeCtor } from "./types";
 
 const URL_BASE = process.env.URL_BASE ?? `http://localhost`;
 
-export interface ExecutionContext {
-  method: "GET" | "POST";
-  url: string;
-  body: unknown;
-  params: Record<string, string>;
-  controller: Ctor;
-  handlerName: string;
-}
-
 @Injectable()
 export class Dispatcher {
-  private readonly steps: Step<ExecutionContext>[] = [];
-  private readonly run = compose(this.steps);
-
   constructor(
     private router: Router,
     private container: Container,
   ) {}
-
-  use(step: Step<ExecutionContext>): this {
-    this.steps.push(step);
-    return this;
-  }
 
   getArgs(
     controller: Ctor,
@@ -73,24 +55,6 @@ export class Dispatcher {
       return value;
     });
   }
-
-  private async invokeHandler(ctx: ExecutionContext): Promise<unknown> {
-    const instance = this.container.resolve(ctx.controller) as Record<
-      string,
-      (...args: unknown[]) => unknown
-    >;
-    const args = await Promise.all(
-      this.getArgs(
-        ctx.controller,
-        ctx.handlerName,
-        ctx.params,
-        ctx.url,
-        ctx.body,
-      ),
-    );
-    return instance[ctx.handlerName](...args);
-  }
-
   async handle(method: "GET" | "POST", url: string, body?: unknown) {
     const match = this.router.match(method, url);
     if (!match)
@@ -100,10 +64,14 @@ export class Dispatcher {
         body: "Not Found",
       };
 
-    const ctx: ExecutionContext = { method, url, body, ...match };
+    const { controller, handlerName, params } = match;
+    const instance = this.container.resolve(controller);
 
     try {
-      const result = await this.run(ctx, (c) => this.invokeHandler(c));
+      const args = await Promise.all(
+        this.getArgs(controller, handlerName, params, url, body),
+      );
+      const result = await (instance as any)[handlerName](...args);
       return {
         status: method === "POST" ? 201 : 200,
         type: "application/json; charset=utf-8",
