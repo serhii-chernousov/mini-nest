@@ -1,10 +1,12 @@
-import { IsEmail, IsString, MinLength } from "class-validator";
+import z from "zod";
+
+export const CreateUserSchema = z.object({
+  email: z.email(),
+  name: z.string().min(1),
+});
 
 export class CreateUserDto {
-  @IsEmail()
+  static schema = CreateUserSchema;
   email!: string;
-
-  @IsString()
-  @MinLength(1)
   name!: string;
 }

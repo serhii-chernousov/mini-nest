@@ -1,6 +1,7 @@
-import { Injectable } from "../../decorators/injectable";
-import { CreateUserDto } from "../../dto/create-user.dto";
-import { UsersRepository } from "./repository";
+import { Injectable } from "../decorators/injectable";
+import { CreateUserDto } from "../dto/create-user.dto";
+import { UsersRepository } from "../repositories/users";
+import { getRequestId } from "../context/request-context";
 
 @Injectable()
 export class UsersService {
@@ -15,6 +16,7 @@ export class UsersService {
   }
 
   userById(id: number) {
+    console.log(`requestId=${getRequestId()}`);
     return this.usersRepository.userById(id);
   }
 }
