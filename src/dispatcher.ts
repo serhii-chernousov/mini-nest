@@ -65,17 +65,21 @@ export class Dispatcher {
       };
 
     const { controller, handlerName, params } = match;
-    const instance = this.container.resolve(controller);
+    const invoke = async () => {
+      const instance = this.container.resolve(controller);
 
-    try {
       const args = await Promise.all(
         this.getArgs(controller, handlerName, params, url, body),
       );
-      const result = await (instance as any)[handlerName](...args);
+      return (instance as any)[handlerName](...args);
+    };
+
+    try {
+      const result = await invoke();
       return {
         status: method === "POST" ? 201 : 200,
         type: "application/json; charset=utf-8",
-        body: JSON.stringify(result),
+        body: JSON.stringify(result ?? {}),
       };
     } catch (error) {
       if (error instanceof BadRequestError) {

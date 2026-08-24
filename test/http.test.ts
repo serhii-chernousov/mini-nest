@@ -1,6 +1,14 @@
 import http from "node:http";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp, createHttpServer } from "../src/app";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { createApp, createHttpServer, MAX_BODY } from "../src/app";
 import { Container } from "../src/container";
 import { PARAMS } from "../src/tokens";
 import { CreateUserDto } from "../src/dto/create-user.dto";
@@ -91,7 +99,10 @@ describe("HTTP", () => {
     });
     expect(status).toBe(400);
     expect(text).toMatch(/email/);
-    const errors = JSON.parse(text) as { field: string; constraints: string[] }[];
+    const errors = JSON.parse(text) as {
+      field: string;
+      constraints: string[];
+    }[];
     expect(errors.some((e) => e.field === "email")).toBe(true);
     expect(errors[0]).toHaveProperty("constraints");
   });
@@ -124,6 +135,16 @@ describe("HTTP", () => {
     const { status, text } = await request("/users?limit=abc");
     expect(status).toBe(400);
     expect(text).toMatch(/limit/);
+  });
+
+  it("тіло більше ліміту дає 413", async () => {
+    const { status, text } = await request("/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "x".repeat(MAX_BODY + 1),
+    });
+    expect(status).toBe(413);
+    expect(text).toMatch(/Payload Too Large/);
   });
 });
 

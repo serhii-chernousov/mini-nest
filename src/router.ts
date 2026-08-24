@@ -5,6 +5,7 @@ import { Ctor } from "./types";
 
 interface CompiledRoute {
   httpMethod: "GET" | "POST";
+  path: string;
   regex: RegExp;
   paramNames: string[];
   controller: Ctor;
@@ -17,6 +18,13 @@ function joinPath(prefix: string, path: string) {
   if (normalizedPath === "/") return normalizedPrefix;
   if (normalizedPrefix === "/") return normalizedPath;
   return `${normalizedPrefix}${normalizedPath}`;
+}
+
+function specificity(path: string) {
+  return path
+    .split("/")
+    .filter(Boolean)
+    .reduce((score, segment) => score + (segment.startsWith(":") ? 1 : 10), 0);
 }
 
 function compilePath(path: string) {
@@ -36,16 +44,18 @@ export class Router {
     for (const controller of this.controllers) {
       this.registerRoutes(controller);
     }
+    this.routes.sort((a, b) => specificity(b.path) - specificity(a.path));
   }
 
   private registerRoutes(controller: Ctor) {
-    const prefix = Reflect.getMetadata(CONTROLLER, controller);
-    const routes = Reflect.getOwnMetadata(ROUTES, controller.prototype);
+    const prefix = Reflect.getMetadata(CONTROLLER, controller) ?? "";
+    const routes = Reflect.getOwnMetadata(ROUTES, controller.prototype) ?? [];
     for (const route of routes) {
       const path = joinPath(prefix, route.path);
       const { regex, paramNames } = compilePath(path);
       this.routes.push({
         httpMethod: route.httpMethod,
+        path,
         regex,
         paramNames,
         controller,
